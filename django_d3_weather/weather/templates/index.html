@@ -1,0 +1,161 @@
+{% load staticfiles %}
+
+<html>
+    <title>Live Weather</title>
+    <head>
+        <script src="https://d3js.org/d3.v3.min.js"></script>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+    </head>
+    <body>
+        <!--{{ data }}-->
+        <div id="content">
+            <button id="weather-data">Update</button>
+        </div>
+
+        <script type="text/javascript">
+            //Ref: http://chimera.labs.oreilly.com/books/1230000000345/ch12.html#_projections
+            function defaultMap(){
+                console.log("This is defaultMap function");
+			    var width = 600, height = 600;
+
+                // 3D space is projected onto a 2D plane
+			    // Default project with translate accessory function
+			    var projection = d3.geo.albersUsa()
+									.translate([width/2, height/2])
+									.scale(width);
+
+			    // inbuilt geo path for  geo data
+			    var path = d3.geo.path()
+							.projection(projection);
+
+			    // Choropleth for coloring states from data
+			    var color = d3.scale.quantize()
+								.range(["rgb(237,248,233)", "rgb(186,228,179)",
+                                   "rgb(116,196,118)", "rgb(49,163,84)","rgb(0,109,44)"]);
+
+			    var svg = d3.select('body').append('svg')
+						.attr('width', width)
+						.attr('height', height);
+
+			    d3.json("/static/us-states.json", function(json){
+						console.log(json);
+						svg.selectAll('path')
+							.data(json.features)
+							.enter()
+							.append('path')
+							.attr('d', path);
+
+			    });
+
+                $("#weather-data").on('click', function(){
+                    //alert("button clicked");
+                    $.ajax({
+                        url: 'http://127.0.0.1:8000/usweather/current/',
+                        type: 'GET',
+                        success: function(data){
+                            //console.log(data.length);
+                            color.domain([
+                                    d3.min(data, function(d){ return d.temp;}),
+                                    d3.max(data, function(d){ return d.temp;})
+                            ]);
+
+                            d3.json("/static/us-states.json", function(jsond){
+						            // merge state temperature data into geoJSON data
+                                    for(var i = 0; i< data.length;i++){
+                                        var dataState = data[i].state;
+                                        var dataStateAbbr = data[i].abbr;
+                                        var stateTemp = parseFloat(data[i].temp);
+                                        console.log(dataState);
+                                        for(var j=0; j<jsond.features.length; j++){
+                                            var jsonState = jsond.features[j].properties.name;
+                                            if(dataState == jsonState){
+                                                    console.log(jsonState);
+                                                    console.log("state match");
+                                                    try{
+                                                    jsond.features[j].properties.temp = stateTemp;
+                                                    jsond.features[j].properties.abbr = dataStateAbbr;
+                                                        }catch(e){
+                                                        console.log(e);
+                                                    }
+                                                    //console.log(jsond.features[j]);
+                                                    break;
+                                            }
+                                        }
+                                    }
+
+                                    var g = svg.append("g");
+                                    var states = g.selectAll('path')
+                                        .data(jsond.features)
+                                        .enter()
+                                        .append('path')
+                                        .attr('d', path)
+                                        .attr('fill', function(d){
+                                                var temp = d.properties.temp;
+
+                                                if(temp){
+                                                    return color(temp);
+                                                }else{
+                                                    return "#ccc";
+                                                }
+                                        })
+                                        .on("mouseover", function(d,i){
+                                            	d3.select("#state"+"-"+d.properties.name).remove();
+                                                d3.select(this).attr({ fill: "orange"});
+                                                svg.append("text").attr({
+                                                    id: "state"+"-"+d.properties.name,
+                                                    x: function(){ return path.centroid(d)[0]},
+                                                    y: function(){ return path.centroid(d)[1]}
+
+                                                })
+                                                .text(function(){
+                                                        return d.properties.name + "-" + d.properties.temp ;
+
+ 				                                });
+                                        })
+                                        .on("mouseout", function(d,i){
+                                            d3.select("#state"+"-"+d.properties.name).remove();
+                                            d3.select(this).attr({
+                                                    fill:function(d){
+                                                                var temp = d.properties.temp;
+
+                                                                if(temp){
+                                                                    return color(temp);
+                                                                }else{
+                                                                    return "#ccc";
+                                                                }
+                                                        }
+                                            });
+                                            svg.selectAll("g")
+                                            .append("text")
+                                            .attr("transform", "translate(" + path.centroid(d) + ")")
+                                            .attr("dy", ".35em")
+                                            .attr("id","state"+"-"+d.properties.name)
+                                            .text(d.properties.abbr);
+                                        });
+
+                                        g.selectAll("text")
+                                                .data(jsond.features)
+                                                .enter()
+                                                .append("text")
+                                                .attr("transform", function(d){ return "translate(" + path.centroid(d) + ")"; })
+                                                .attr("dy", ".35em")
+                                                .attr("id",function(d){ return "state"+"-"+d.properties.name;})
+                                                .text(function(d) { return d.properties.abbr; });
+                                });
+
+                        },
+                        error: function(){
+                            console.log("error");
+                        }
+
+                    });
+
+                });
+            }
+
+            $(document).ready(function(){
+                defaultMap();
+            })
+        </script>
+    </body>
+</html>
